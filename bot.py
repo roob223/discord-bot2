@@ -54,16 +54,17 @@ class JoinButton(discord.ui.View):
         giveaway = giveaways.get(self.giveaway_id)
 
         if not giveaway:
-            await interaction.followup.send("❌ Giveaway existiert nicht mehr.")
+            await interaction.followup.send("❌ Giveaway existiert nicht mehr.", ephemeral=True)
             return
 
         if interaction.user.id in giveaway["participants"]:
-            await interaction.followup.send("❗ Du bist schon drin.")
+            await interaction.followup.send("❗ Du bist schon drin.", ephemeral=True)
             return
 
         giveaway["participants"].add(interaction.user.id)
 
-        await interaction.followup.send("✅ Du bist im Giveaway!")
+        # 🔥 FIX: jetzt NUR sichtbar für User
+        await interaction.followup.send("✅ Du bist im Giveaway!", ephemeral=True)
 
         # Update Teilnehmer Anzeige
         embed = giveaway["message"].embeds[0]
