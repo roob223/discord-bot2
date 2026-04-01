@@ -6,113 +6,116 @@ import random
 from datetime import datetime, timedelta
 import os
 
+# 🔑 TOKEN
 TOKEN = os.getenv("TOKEN")
 
+# 🔒 DEINE IDS
 ALLOWED_USER_ID = 1296572872441204748
 ALLOWED_CHANNEL_ID = 1488964567563501617
-RESULT_CHANNEL_ID = 1488964567563501617
 
-intents = discord.Intents.all()
+intents = discord.Intents.default()
+intents.members = True
+
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 giveaways = {}
 
-# 🕒 Zeit Parser
-def parse_time(time_str):
-    try:
-        if time_str.endswith("h"):
-            return int(time_str[:-1]) * 60
-        elif time_str.endswith("d"):
-            return int(time_str[:-1]) * 1440
-        else:
-            return int(time_str)
-    except:
-        return None
-
-
-# 🎉 BUTTON
+# 🎉 BUTTON VIEW
 class JoinButton(discord.ui.View):
     def __init__(self, giveaway_id):
         super().__init__(timeout=None)
         self.giveaway_id = giveaway_id
 
-    @discord.ui.button(label="🎉 Beitreten", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="🎉 Beitreten", style=discord.ButtonStyle.green)
     async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
-        try:
-            giveaway = giveaways.get(self.giveaway_id)
+        await interaction.response.defer(ephemeral=True)
 
-            if not giveaway:
-                await interaction.response.send_message("❌ Giveaway existiert nicht mehr.", ephemeral=True)
-                return
+        giveaway = giveaways.get(self.giveaway_id)
 
-            if interaction.user.id in giveaway["participants"]:
-                await interaction.response.send_message("❗ Du bist schon dabei!", ephemeral=True)
-                return
+        if not giveaway:
+            await interaction.followup.send("❌ Giveaway existiert nicht mehr.")
+            return
 
-            giveaway["participants"].add(interaction.user.id)
+        if interaction.user.bot:
+            await interaction.followup.send("❌ Bots dürfen nicht teilnehmen!")
+            return
 
-            await interaction.response.send_message("✅ Du bist im Giveaway!", ephemeral=True)
+        member = interaction.guild.get_member(interaction.user.id)
 
-            embed = giveaway["message"].embeds[0]
-            embed.set_field_at(2, name="👥 Teilnehmer", value=f"`{len(giveaway['participants'])}`", inline=True)
+        if not member or not member.joined_at:
+            await interaction.followup.send("❌ Fehler beim Prüfen.")
+            return
 
-            await giveaway["message"].edit(embed=embed, view=self)
+        if interaction.user.id in giveaway["participants"]:
+            await interaction.followup.send("❗ Du bist schon dabei!")
+            return
 
-        except Exception as e:
-            print(e)
+        giveaway["participants"].add(interaction.user.id)
+
+        await interaction.followup.send("✅ Erfolgreich beigetreten!")
+
+        embed = giveaway["message"].embeds[0]
+        embed.set_field_at(
+            2,
+            name="👥 Teilnehmer",
+            value=f"**{len(giveaway['participants'])}**",
+            inline=True
+        )
+
+        await giveaway["message"].edit(embed=embed, view=self)
 
 
 # READY
 @bot.event
 async def on_ready():
     print(f"Online als {bot.user}")
-    await bot.tree.sync()
+    try:
+        await bot.tree.sync()
+    except Exception as e:
+        print(e)
 
 
-# 🎉 COMMAND
+# 🎉 GIVEAWAY COMMAND (JETZT MIT STUNDEN!)
 @bot.tree.command(name="giveaway", description="Erstelle ein Giveaway")
 @app_commands.describe(
-    dauer="z.B: 10 / 2h / 1d",
+    dauer="Dauer",
+    einheit="Minuten oder Stunden",
     preis="Was gibt es zu gewinnen?",
-    gewinner="Anzahl der Gewinner"
+    gewinner="Anzahl Gewinner"
 )
-async def giveaway(interaction: discord.Interaction, dauer: str, preis: str, gewinner: int):
+@app_commands.choices(einheit=[
+    app_commands.Choice(name="Minuten", value="min"),
+    app_commands.Choice(name="Stunden", value="h")
+])
+async def giveaway(interaction: discord.Interaction, dauer: int, einheit: app_commands.Choice[str], preis: str, gewinner: int):
 
     if interaction.user.id != ALLOWED_USER_ID:
-        await interaction.response.send_message("❌ Keine Rechte", ephemeral=True)
+        await interaction.response.send_message("❌ Du darfst das nicht!", ephemeral=True)
         return
 
     if interaction.channel.id != ALLOWED_CHANNEL_ID:
-        await interaction.response.send_message("❌ Falscher Channel", ephemeral=True)
+        await interaction.response.send_message("❌ Nur in diesem Channel erlaubt!", ephemeral=True)
         return
 
-    minutes = parse_time(dauer)
-
-    if not minutes:
-        await interaction.response.send_message("❌ Format: 10 / 2h / 1d", ephemeral=True)
-        return
-
-    end_time = datetime.utcnow() + timedelta(minutes=minutes)
-    timestamp = int(end_time.timestamp())
+    if einheit.value == "h":
+        end_time = datetime.utcnow() + timedelta(hours=dauer)
+        dauer_text = f"{dauer} Stunden"
+    else:
+        end_time = datetime.utcnow() + timedelta(minutes=dauer)
+        dauer_text = f"{dauer} Minuten"
 
     embed = discord.Embed(
         title="🎉 **GIVEAWAY** 🎉",
-        description=(
-            f"🎁 **Preis:** `{preis}`\n\n"
-            f"⏳ **Endet:** <t:{timestamp}:R>\n"
-            f"👑 **Host:** {interaction.user.mention}"
-        ),
-        color=discord.Color.from_rgb(88, 101, 242)  # Discord Blau
+        description=f"💎 **Preis:**\n> {preis}",
+        color=discord.Color.from_rgb(255, 0, 200)
     )
 
+    embed.add_field(name="⏳ Dauer", value=f"`{dauer_text}`", inline=True)
     embed.add_field(name="🏆 Gewinner", value=f"`{gewinner}`", inline=True)
     embed.add_field(name="👥 Teilnehmer", value="`0`", inline=True)
-    embed.add_field(name="📊 Status", value="🟢 Läuft", inline=True)
+    embed.set_footer(text="Drücke auf den Button um teilzunehmen!")
 
-    embed.set_footer(text="Klicke auf 🎉 um teilzunehmen!")
-    embed.set_thumbnail(url=interaction.guild.icon.url if interaction.guild.icon else None)
-
-    view = JoinButton(str(interaction.id))
+    view = JoinButton(giveaway_id=str(interaction.id))
 
     await interaction.response.send_message(embed=embed, view=view)
     message = await interaction.original_response()
@@ -128,7 +131,7 @@ async def giveaway(interaction: discord.Interaction, dauer: str, preis: str, gew
     bot.loop.create_task(end_giveaway(str(interaction.id)))
 
 
-# 🎉 ENDE
+# 🎉 GIVEAWAY ENDE
 async def end_giveaway(giveaway_id):
     giveaway = giveaways[giveaway_id]
 
@@ -138,30 +141,55 @@ async def end_giveaway(giveaway_id):
         await asyncio.sleep(wait_time)
 
     participants = list(giveaway["participants"])
-    channel = bot.get_channel(RESULT_CHANNEL_ID)
-
-    if not channel:
-        return
+    channel = giveaway["message"].channel
 
     if not participants:
         await channel.send("❌ Niemand hat teilgenommen.")
-        winners_text = "Keine Teilnehmer"
     else:
         winners = random.sample(participants, min(len(participants), giveaway["gewinner"]))
-        winners_text = " ".join([f"<@{w}>" for w in winners])
+
+        winners_text = "\n".join([f"<@{w}>" for w in winners])
 
         await channel.send(
-            f"🎉 **GEWINNER** 🎉\n\n{winners_text}\n\n🏆 Preis: **{giveaway['preis']}**"
+            f"🎉 **GIVEAWAY BEENDET** 🎉\n\n"
+            f"🏆 Gewinner:\n{winners_text}\n\n"
+            f"💎 Preis: **{giveaway['preis']}**"
         )
 
     embed = giveaway["message"].embeds[0]
+    embed.title = "🎉 GIVEAWAY BEENDET"
     embed.color = discord.Color.red()
-
-    embed.set_field_at(2, name="📊 Status", value="🔴 Beendet", inline=True)
 
     await giveaway["message"].edit(embed=embed, view=None)
 
     del giveaways[giveaway_id]
+
+
+# 🔁 REROLL COMMAND
+@bot.tree.command(name="reroll", description="Ziehe neuen Gewinner")
+async def reroll(interaction: discord.Interaction, message_id: str):
+
+    if interaction.user.id != ALLOWED_USER_ID:
+        await interaction.response.send_message("❌ Du darfst das nicht!", ephemeral=True)
+        return
+
+    giveaway = giveaways.get(message_id)
+
+    if not giveaway:
+        await interaction.response.send_message("❌ Giveaway nicht gefunden!", ephemeral=True)
+        return
+
+    participants = list(giveaway["participants"])
+
+    if not participants:
+        await interaction.response.send_message("❌ Keine Teilnehmer!", ephemeral=True)
+        return
+
+    winner = random.choice(participants)
+
+    await interaction.response.send_message(
+        f"🔁 Neuer Gewinner: <@{winner}> 🎉"
+    )
 
 
 # START
