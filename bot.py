@@ -6,19 +6,30 @@ import random
 from datetime import datetime, timedelta
 import os
 
-# 🔑 TOKEN FIX
-TOKEN = os.getenv("TOKEN")  # ← DAS WAR DEIN FEHLER
+# 🔑 TOKEN
+TOKEN = os.getenv("TOKEN")
 
 # 🔒 DEINE IDS
 ALLOWED_USER_ID = 1296572872441204748
 ALLOWED_CHANNEL_ID = 1488964567563501617
 
-intents = discord.Intents.default()
-intents.members = True
-
+intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 giveaways = {}
+
+# 🕒 Dauer Parser (MIN, STUNDEN, TAGE)
+def parse_time(time_str):
+    try:
+        if time_str.endswith("h"):
+            return int(time_str[:-1]) * 60
+        elif time_str.endswith("d"):
+            return int(time_str[:-1]) * 1440
+        else:
+            return int(time_str)  # Minuten
+    except:
+        return None
+
 
 # 🎉 Button
 class JoinButton(discord.ui.View):
@@ -34,7 +45,6 @@ class JoinButton(discord.ui.View):
             await interaction.response.send_message("❌ Giveaway existiert nicht mehr.", ephemeral=True)
             return
 
-        # Anti Fake
         if interaction.user.bot:
             await interaction.response.send_message("❌ Bots dürfen nicht teilnehmen!", ephemeral=True)
             return
@@ -78,11 +88,11 @@ async def on_ready():
 # 🎉 Command
 @bot.tree.command(name="giveaway", description="Erstelle ein Giveaway")
 @app_commands.describe(
-    dauer="Dauer in Minuten",
+    dauer="z.B: 10 / 2h / 1d",
     preis="Was gibt es zu gewinnen?",
     gewinner="Anzahl der Gewinner"
 )
-async def giveaway(interaction: discord.Interaction, dauer: int, preis: str, gewinner: int):
+async def giveaway(interaction: discord.Interaction, dauer: str, preis: str, gewinner: int):
 
     if interaction.user.id != ALLOWED_USER_ID:
         await interaction.response.send_message("❌ Du darfst das nicht!", ephemeral=True)
@@ -92,7 +102,13 @@ async def giveaway(interaction: discord.Interaction, dauer: int, preis: str, gew
         await interaction.response.send_message("❌ Nur in diesem Channel erlaubt!", ephemeral=True)
         return
 
-    end_time = datetime.utcnow() + timedelta(minutes=dauer)
+    minutes = parse_time(dauer)
+
+    if not minutes:
+        await interaction.response.send_message("❌ Falsches Format! Beispiel: 10 / 2h / 1d", ephemeral=True)
+        return
+
+    end_time = datetime.utcnow() + timedelta(minutes=minutes)
 
     embed = discord.Embed(
         title="🎉 GIVEAWAY 🎉",
@@ -100,7 +116,7 @@ async def giveaway(interaction: discord.Interaction, dauer: int, preis: str, gew
         color=discord.Color.purple()
     )
 
-    embed.add_field(name="⏳ Dauer", value=f"{dauer} Minuten", inline=True)
+    embed.add_field(name="⏳ Dauer", value=dauer, inline=True)
     embed.add_field(name="🏆 Gewinner", value=str(gewinner), inline=True)
     embed.add_field(name="👥 Teilnehmer", value="0", inline=True)
     embed.set_footer(text="Klicke auf den Button!")
@@ -143,7 +159,6 @@ async def end_giveaway(giveaway_id):
                 f"👉 open a ticket for your key 🎟️"
             )
 
-    # Embed ändern
     embed = giveaway["message"].embeds[0]
     embed.title = "🎉 GIVEAWAY BEENDET"
     embed.color = discord.Color.red()
