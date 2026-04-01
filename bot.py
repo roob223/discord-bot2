@@ -28,31 +28,30 @@ class JoinButton(discord.ui.View):
 
     @discord.ui.button(label="🎉 Beitreten", style=discord.ButtonStyle.green)
     async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-
         giveaway = giveaways.get(self.giveaway_id)
 
         if not giveaway:
-            await interaction.followup.send("❌ Giveaway existiert nicht mehr.")
+            await interaction.response.send_message("❌ Giveaway existiert nicht mehr.", ephemeral=True, delete_after=5)
             return
 
         if interaction.user.bot:
-            await interaction.followup.send("❌ Bots dürfen nicht teilnehmen!")
+            await interaction.response.send_message("❌ Bots dürfen nicht teilnehmen!", ephemeral=True, delete_after=5)
             return
 
         member = interaction.guild.get_member(interaction.user.id)
 
         if not member or not member.joined_at:
-            await interaction.followup.send("❌ Fehler beim Prüfen.")
+            await interaction.response.send_message("❌ Fehler beim Prüfen.", ephemeral=True, delete_after=5)
             return
 
         if interaction.user.id in giveaway["participants"]:
-            await interaction.followup.send("❗ Du bist schon dabei!")
+            await interaction.response.send_message("❗ Du bist schon dabei!", ephemeral=True, delete_after=5)
             return
 
         giveaway["participants"].add(interaction.user.id)
 
-        await interaction.followup.send("✅ Erfolgreich beigetreten!")
+        # ✅ NUR private Nachricht + auto löschen
+        await interaction.response.send_message("✅ Erfolgreich beigetreten!", ephemeral=True, delete_after=5)
 
         embed = giveaway["message"].embeds[0]
         embed.set_field_at(
@@ -75,7 +74,7 @@ async def on_ready():
         print(e)
 
 
-# 🎉 GIVEAWAY COMMAND (JETZT MIT STUNDEN!)
+# 🎉 GIVEAWAY COMMAND
 @bot.tree.command(name="giveaway", description="Erstelle ein Giveaway")
 @app_commands.describe(
     dauer="Dauer",
@@ -165,7 +164,7 @@ async def end_giveaway(giveaway_id):
     del giveaways[giveaway_id]
 
 
-# 🔁 REROLL COMMAND
+# 🔁 REROLL
 @bot.tree.command(name="reroll", description="Ziehe neuen Gewinner")
 async def reroll(interaction: discord.Interaction, message_id: str):
 
