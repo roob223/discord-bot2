@@ -4,12 +4,10 @@ from discord import app_commands
 import asyncio
 import random
 from datetime import datetime, timedelta
-from dotenv import load_dotenv
 import os
 
-# 🔒 Token laden
-load_dotenv()
-TOKEN = os.getenv("DISCORD_TOKEN")
+# 🔑 TOKEN FIX
+TOKEN = os.getenv("TOKEN")  # ← DAS WAR DEIN FEHLER
 
 # 🔒 DEINE IDS
 ALLOWED_USER_ID = 1296572872441204748
@@ -46,6 +44,10 @@ class JoinButton(discord.ui.View):
             return
 
         member = interaction.guild.get_member(interaction.user.id)
+        if not member or not member.joined_at:
+            await interaction.response.send_message("❌ Fehler beim Prüfen.", ephemeral=True)
+            return
+
         if datetime.utcnow() - member.joined_at < timedelta(days=3):
             await interaction.response.send_message("❌ Du bist noch nicht lange genug auf dem Server!", ephemeral=True)
             return
@@ -67,7 +69,10 @@ class JoinButton(discord.ui.View):
 @bot.event
 async def on_ready():
     print(f"Online als {bot.user}")
-    await bot.tree.sync()
+    try:
+        await bot.tree.sync()
+    except Exception as e:
+        print(e)
 
 
 # 🎉 Command
