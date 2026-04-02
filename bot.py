@@ -18,41 +18,55 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 giveaways = {}
 
-# 🔄 TIMER LOOP
-@tasks.loop(seconds=60)
+# 🔥 TIME FORMAT (FIX)
+def get_time_left(end_time):
+    remaining = end_time - datetime.utcnow()
+    total = int(remaining.total_seconds())
+
+    if total <= 0:
+        return "0m"
+
+    hours = total // 3600
+    minutes = (total % 3600) // 60
+
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
+# 🔥 EMBED BUILDER (IMMER FRESH)
+def build_embed(g):
+    return discord.Embed(
+        title="🎉 GIVEAWAY 🎉",
+        description=f"💎 **{g['preis']}**\n\n✨ Klicke unten um teilzunehmen!",
+        color=discord.Color.from_rgb(255, 0, 200)
+    ).add_field(
+        name="⏳ Verbleibend",
+        value=f"`{get_time_left(g['end_time'])}`",
+        inline=True
+    ).add_field(
+        name="🏆 Gewinner",
+        value=f"`{g['gewinner']}`",
+        inline=True
+    ).add_field(
+        name="👥 Teilnehmer",
+        value=f"`{len(g['participants'])}`",
+        inline=True
+    ).set_footer(text="🔥 Viel Glück!")
+
+
+# 🔄 TIMER LOOP (JETZT 100% FIX)
+@tasks.loop(seconds=30)
 async def update_giveaways():
     for gid, g in list(giveaways.items()):
-        remaining = g["end_time"] - datetime.utcnow()
-
-        if remaining.total_seconds() <= 0:
+        if datetime.utcnow() >= g["end_time"]:
             continue
 
-        # Zeit berechnen
-        hours = int(remaining.total_seconds() // 3600)
-        minutes = int((remaining.total_seconds() % 3600) // 60)
-
-        if hours > 0:
-            time_text = f"{hours}h {minutes}m"
-        else:
-            time_text = f"{minutes}m"
-
-        # 🔥 WICHTIG: Embed NEU erstellen (Fix für stuck bug)
-        old = g["message"].embeds[0]
-
-        embed = discord.Embed(
-            title=old.title,
-            description=old.description,
-            color=old.color
-        )
-
-        embed.add_field(name="⏳ Verbleibend", value=f"`{time_text}`", inline=True)
-        embed.add_field(name="🏆 Gewinner", value=old.fields[1].value, inline=True)
-        embed.add_field(name="👥 Teilnehmer", value=f"`{len(g['participants'])}`", inline=True)
-
-        embed.set_footer(text="🎉 Klicke auf den Button um teilzunehmen!")
-
         try:
-            await g["message"].edit(embed=embed, view=g["view"])
+            await g["message"].edit(
+                embed=build_embed(g),
+                view=g["view"]
+            )
         except:
             pass
 
@@ -67,37 +81,23 @@ class JoinButton(discord.ui.View):
     async def join(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
 
-        giveaway = giveaways.get(self.giveaway_id)
+        g = giveaways.get(self.giveaway_id)
 
-        if not giveaway:
-            await interaction.followup.send("❌ Giveaway existiert nicht mehr.", ephemeral=True)
-            return
+        if not g:
+            return await interaction.followup.send("❌ Giveaway weg.", ephemeral=True)
 
-        if interaction.user.id in giveaway["participants"]:
-            await interaction.followup.send("❗ Du bist schon drin.", ephemeral=True)
-            return
+        if interaction.user.id in g["participants"]:
+            return await interaction.followup.send("❗ Schon drin.", ephemeral=True)
 
-        # ✅ Teilnehmer hinzufügen
-        giveaway["participants"].add(interaction.user.id)
+        g["participants"].add(interaction.user.id)
 
         await interaction.followup.send("✅ Du bist jetzt im Giveaway!", ephemeral=True)
 
-        # 🔥 FIX: Embed komplett neu bauen (kein set_field_at mehr!)
-        old = giveaway["message"].embeds[0]
-
-        embed = discord.Embed(
-            title=old.title,
-            description=old.description,
-            color=old.color
+        # 🔥 SOFORT UPDATE (kein delay mehr)
+        await g["message"].edit(
+            embed=build_embed(g),
+            view=self
         )
-
-        embed.add_field(name="⏳ Verbleibend", value=old.fields[0].value, inline=True)
-        embed.add_field(name="🏆 Gewinner", value=old.fields[1].value, inline=True)
-        embed.add_field(name="👥 Teilnehmer", value=f"`{len(giveaway['participants'])}`", inline=True)
-
-        embed.set_footer(text="🎉 Klicke auf den Button um teilzunehmen!")
-
-        await giveaway["message"].edit(embed=embed, view=self)
 
 
 # READY
@@ -111,10 +111,10 @@ async def on_ready():
 # 🎉 GIVEAWAY
 @bot.tree.command(name="giveaway", description="Erstelle ein Giveaway")
 @app_commands.describe(
-    dauer="Dauer",
+    dauer="Zahl",
     einheit="min oder h",
     preis="Preis",
-    gewinner="Gewinner Anzahl"
+    gewinner="Gewinner"
 )
 @app_commands.choices(einheit=[
     app_commands.Choice(name="Minuten", value="min"),
@@ -123,37 +123,19 @@ async def on_ready():
 async def giveaway(interaction: discord.Interaction, dauer: int, einheit: app_commands.Choice[str], preis: str, gewinner: int):
 
     if interaction.user.id != ALLOWED_USER_ID:
-        await interaction.response.send_message("❌ Keine Rechte", ephemeral=True)
-        return
+        return await interaction.response.send_message("❌ Keine Rechte", ephemeral=True)
 
     if interaction.channel.id != ALLOWED_CHANNEL_ID:
-        await interaction.response.send_message("❌ Falscher Channel", ephemeral=True)
-        return
+        return await interaction.response.send_message("❌ Falscher Channel", ephemeral=True)
 
-    # Zeit setzen
     if einheit.value == "h":
         end_time = datetime.utcnow() + timedelta(hours=dauer)
-        time_text = f"{dauer}h"
     else:
         end_time = datetime.utcnow() + timedelta(minutes=dauer)
-        time_text = f"{dauer}m"
-
-    # ✨ Besseres UI
-    embed = discord.Embed(
-        title="🎉 GIVEAWAY 🎉",
-        description=f"💎 **{preis}**\n\n✨ Klicke unten um teilzunehmen!",
-        color=discord.Color.from_rgb(255, 0, 200)
-    )
-
-    embed.add_field(name="⏳ Verbleibend", value=f"`{time_text}`", inline=True)
-    embed.add_field(name="🏆 Gewinner", value=f"`{gewinner}`", inline=True)
-    embed.add_field(name="👥 Teilnehmer", value="`0`", inline=True)
-
-    embed.set_footer(text="🔥 Viel Glück!")
 
     view = JoinButton(str(interaction.id))
 
-    await interaction.response.send_message(embed=embed, view=view)
+    await interaction.response.send_message("🎉 Giveaway wird erstellt...")
     msg = await interaction.original_response()
 
     giveaways[str(interaction.id)] = {
@@ -164,6 +146,8 @@ async def giveaway(interaction: discord.Interaction, dauer: int, einheit: app_co
         "message": msg,
         "view": view
     }
+
+    await msg.edit(embed=build_embed(giveaways[str(interaction.id)]), view=view)
 
     bot.loop.create_task(end_giveaway(str(interaction.id)))
 
@@ -177,7 +161,6 @@ async def end_giveaway(gid):
         await asyncio.sleep(wait)
 
     participants = list(g["participants"])
-
     channel = g["message"].channel
 
     if not participants:
@@ -191,19 +174,14 @@ async def end_giveaway(gid):
             f"🎉 **GIVEAWAY BEENDET** 🎉\n\n🏆 Gewinner:\n{text}\n\n💎 {g['preis']}"
         )
 
-    # Embed ändern
-    old = g["message"].embeds[0]
-
-    embed = discord.Embed(
-        title="🎉 GIVEAWAY BEENDET",
-        description=old.description,
-        color=discord.Color.red()
+    await g["message"].edit(
+        embed=discord.Embed(
+            title="🎉 GIVEAWAY BEENDET",
+            description=f"💎 **{g['preis']}**",
+            color=discord.Color.red()
+        ),
+        view=None
     )
-
-    embed.add_field(name="🏆 Gewinner", value=old.fields[1].value, inline=True)
-    embed.add_field(name="👥 Teilnehmer", value=f"`{len(g['participants'])}`", inline=True)
-
-    await g["message"].edit(embed=embed, view=None)
 
     del giveaways[gid]
 
@@ -213,18 +191,12 @@ async def end_giveaway(gid):
 async def reroll(interaction: discord.Interaction, message_id: str):
 
     if interaction.user.id != ALLOWED_USER_ID:
-        await interaction.response.send_message("❌ Keine Rechte", ephemeral=True)
-        return
+        return await interaction.response.send_message("❌ Keine Rechte", ephemeral=True)
 
     g = giveaways.get(message_id)
 
-    if not g:
-        await interaction.response.send_message("❌ Giveaway nicht gefunden", ephemeral=True)
-        return
-
-    if not g["participants"]:
-        await interaction.response.send_message("❌ Keine Teilnehmer", ephemeral=True)
-        return
+    if not g or not g["participants"]:
+        return await interaction.response.send_message("❌ Fehler", ephemeral=True)
 
     winner = random.choice(list(g["participants"]))
 
