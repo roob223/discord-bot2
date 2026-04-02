@@ -1,30 +1,31 @@
-import discord, os, smtplib
+import discord
+from discord import app_commands
 from discord.ext import commands
 
-bot = commands.Bot(command_prefix='!')
+intents = discord.Intents.default()
+intents.members = True  # wichtig für User-Infos
+
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 @bot.event
 async def on_ready():
-    print('Bot ist bereit!')
+    await bot.tree.sync()
+    print(f"Bot ist online als {bot.user}")
 
-@bot.command()
-async def reaktion(ctx, server_id, channel_id, message, emoji):
-    server = bot.get_guild(int(server_id))
-    channel = server.get_channel(int(channel_id))
+# /lookup command
+@bot.tree.command(name="lookup", description="Zeigt Infos über einen Discord User")
+@app_commands.describe(user="Der User den du nachschlagen willst")
+async def lookup(interaction: discord.Interaction, user: discord.User):
 
-    await ctx.send('Login-Daten erforderlich...')
+    embed = discord.Embed(title="🔍 User Lookup", color=discord.Color.blue())
 
-    # Hier fügen Sie den Login-Prozess mit verschiedenen E-Mail- und Passwort-Kombinationen ein
+    embed.add_field(name="Username", value=user.name, inline=False)
+    embed.add_field(name="ID", value=user.id, inline=False)
+    embed.add_field(name="Account erstellt am", value=user.created_at.strftime("%d.%m.%Y"), inline=False)
 
-    for email, password in zip(emails, passwords):
-        login_data = smtplib.SMTP('smtp.gmail.com', 587)
-        login_data.starttls()
-        login_data.login(email, password)
-        login_data.quit()
+    if user.avatar:
+        embed.set_thumbnail(url=user.avatar.url)
 
-        # Füge den Benutzer zum Server hinzu
-        await channel.send(f'Willkommen {email}!')
-        await channel.send(message)
-        await channel.send(emoji)
+    await interaction.response.send_message(embed=embed)
 
-bot.run('YOUR_TOKEN')
+bot.run("DEIN_BOT_TOKEN")
