@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 import sqlite3
+import os
 
 # ====== DATABASE SETUP ======
 conn = sqlite3.connect("database.db")
@@ -25,8 +26,13 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # ====== EVENTS ======
 @bot.event
 async def on_ready():
-    await bot.tree.sync()
-    print(f"Logged in as {bot.user}")
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Commands synced: {len(synced)}")
+    except Exception as e:
+        print(e)
+
+    print(f"🔥 Bot online als {bot.user}")
 
 @bot.event
 async def on_message(message):
@@ -49,7 +55,7 @@ async def on_message(message):
 
 # ====== /LOOKUP COMMAND ======
 @bot.tree.command(name="lookup", description="Zeigt Infos über einen User")
-@app_commands.describe(user="Der User")
+@app_commands.describe(user="Der User den du checken willst")
 async def lookup(interaction: discord.Interaction, user: discord.User):
 
     embed = discord.Embed(title="🔍 Advanced Lookup", color=discord.Color.purple())
@@ -70,7 +76,6 @@ async def lookup(interaction: discord.Interaction, user: discord.User):
     data = cursor.fetchone()
 
     messages = data[0] if data else 0
-
     embed.add_field(name="Nachrichten", value=messages, inline=False)
 
     if user.avatar:
@@ -79,4 +84,9 @@ async def lookup(interaction: discord.Interaction, user: discord.User):
     await interaction.response.send_message(embed=embed)
 
 # ====== START ======
-bot.run("DEIN_BOT_TOKEN")
+TOKEN = os.getenv("TOKEN")
+
+if not TOKEN:
+    print("❌ Kein Token gefunden! Setze TOKEN als ENV Variable.")
+else:
+    bot.run(TOKEN)
