@@ -16,7 +16,7 @@ UNLIMITED_ROLE_ID = 1490478384730476615
 OWNER_ID = 1296572872441204748
 
 DAILY_LIMIT = 40
-COOLDOWN = 30
+COOLDOWN = 0
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
