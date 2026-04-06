@@ -65,7 +65,6 @@ emoji_map = {
     "Prime Video": "📦",
 }
 
-
 def extract_account(line):
     line = line.strip()
     if not line:
@@ -73,7 +72,6 @@ def extract_account(line):
     if re.search(r'[^\s]+@[^\s]+', line):
         return line
     return None
-
 
 def get_account(file):
     if not os.path.exists(file):
@@ -92,12 +90,10 @@ def get_account(file):
 
     return acc
 
-
 def check_reset(user_id):
     today = str(date.today())
     if user_id not in usage or usage[user_id]["date"] != today:
         usage[user_id] = {"count": 0, "date": today}
-
 
 async def update_stock():
     global stock_message, rainbow_index
@@ -133,11 +129,9 @@ async def update_stock():
     else:
         stock_message = await channel.send(embed=embed)
 
-
 @tasks.loop(seconds=5)
 async def rainbow_loop():
     await update_stock()
-
 
 class GenSelect(discord.ui.Select):
     def __init__(self):
@@ -146,25 +140,23 @@ class GenSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         user_id = str(interaction.user.id)
-
         roles = [r.id for r in interaction.user.roles]
 
-        # ❌ Kein Zugriff
+        # Zugriff prüfen
         if GEN_ROLE_ID not in roles and UNLIMITED_ROLE_ID not in roles:
             return await interaction.response.send_message("❌ No access", ephemeral=True)
 
         has_unlimited = UNLIMITED_ROLE_ID in roles
 
-        # 🔥 UNLIMITED USER
+        # NORMAL USER → Cooldown + Limit
         if not has_unlimited:
-            # ⏳ Cooldown
             if user_id in cooldowns:
                 remaining = COOLDOWN - (datetime.utcnow() - cooldowns[user_id]).total_seconds()
                 if remaining > 0:
                     return await interaction.response.send_message(f"⏳ Wait {int(remaining)}s", ephemeral=True)
 
-            # 📊 Daily Limit
             check_reset(user_id)
+
             if usage[user_id]["count"] >= DAILY_LIMIT:
                 return await interaction.response.send_message("🚫 Daily limit reached", ephemeral=True)
 
@@ -176,14 +168,14 @@ class GenSelect(discord.ui.Select):
         if not acc:
             return await interaction.response.send_message("❌ Out of stock", ephemeral=True)
 
-        # ✅ Count nur für normale User
+        # Nur normale User zählen
         if not has_unlimited:
             usage[user_id]["count"] += 1
             cooldowns[user_id] = datetime.utcnow()
 
         embed = discord.Embed(
             title="🎁 ACCOUNT GENERATED",
-            description=f"💎 {gen}\n```{acc}```",
+            description=f"💎 {gen}\n━━━━━━━━━━━━━━\n```{acc}```\n━━━━━━━━━━━━━━",
             color=discord.Color.blurple()
         )
 
@@ -197,28 +189,76 @@ class GenSelect(discord.ui.Select):
 
         await update_stock()
 
-
 class GenView(discord.ui.View):
     def __init__(self):
         super().__init__()
         self.add_item(GenSelect())
 
-
 @bot.tree.command(name="gen")
 async def gen(interaction: discord.Interaction):
     await interaction.response.send_message("Select Generator:", view=GenView(), ephemeral=True)
 
+@bot.tree.command(name="files")
+@app_commands.describe(generator="Generator", file="Upload .txt")
+@app_commands.choices(generator=[app_commands.Choice(name=x, value=x) for x in generators])
+async def files(interaction: discord.Interaction, generator: app_commands.Choice[str], file: discord.Attachment):
+    if interaction.user.id != OWNER_ID:
+        return await interaction.response.send_message("❌ Only Owner", ephemeral=True)
+
+    content = await file.read()
+    text = content.decode("utf-8", errors="ignore")
+
+    lines = []
+
+    for line in text.split("\n"):
+        acc = extract_account(line)
+        if acc:
+            lines.append(acc)
+
+    path = generators[generator.value]
+
+    with open(path, "a", encoding="utf-8") as f:
+        for l in lines:
+            f.write(l + "\n")
+
+    await interaction.response.send_message(f"✅ Added {len(lines)} accounts", ephemeral=True)
+    await update_stock()
+
+class ClearModal(discord.ui.Modal, title="Clear Generator"):
+    gen_name = discord.ui.TextInput(label="Generator Name")
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != OWNER_ID:
+            return await interaction.response.send_message("❌ No access", ephemeral=True)
+
+        gen = self.gen_name.value.strip()
+
+        if gen not in generators:
+            return await interaction.response.send_message("❌ Invalid Generator", ephemeral=True)
+
+        open(generators[gen], "w").close()
+
+        await interaction.response.send_message(f"✅ Cleared {gen}", ephemeral=True)
+        await update_stock()
+
+class PanelView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="🧹 Clear Generator", style=discord.ButtonStyle.red)
+    async def clear(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(ClearModal())
 
 @bot.event
 async def on_ready():
     print(f"✅ Online: {bot.user}")
     await bot.tree.sync()
+
     await update_stock()
     rainbow_loop.start()
 
     channel = bot.get_channel(PANEL_CHANNEL_ID)
     if channel:
-        await channel.send("🛠️ Control Panel")
-
+        await channel.send("🛠️ Control Panel", view=PanelView())
 
 bot.run(TOKEN)
